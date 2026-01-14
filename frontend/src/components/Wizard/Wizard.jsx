@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import StepIndicator from './StepIndicator'
 import Step1Upload from './steps/Step1Upload'
 import Step2Analyze from './steps/Step2Analyze'
@@ -6,6 +6,7 @@ import Step3Mapping from './steps/Step3Mapping'
 import Step4Review from './steps/Step4Review'
 import Step5Generate from './steps/Step5Generate'
 import Step6Download from './steps/Step6Download'
+import { cleanupSession } from '../../services/api'
 
 const STEPS = [
   { id: 1, title: 'Subir Template', description: 'Archivo ZIP y configuración' },
@@ -16,17 +17,19 @@ const STEPS = [
   { id: 6, title: 'Descargar', description: 'Obtener resultado' },
 ]
 
+const initialSessionData = {
+  sessionId: null,
+  config: null,
+  htmlFiles: [],
+  menuStructure: null,
+  components: null,
+  mapping: null,
+  generatedProject: null,
+}
+
 export default function Wizard() {
   const [currentStep, setCurrentStep] = useState(1)
-  const [sessionData, setSessionData] = useState({
-    sessionId: null,
-    config: null,
-    htmlFiles: [],
-    menuStructure: null,
-    components: null,
-    mapping: null,
-    generatedProject: null,
-  })
+  const [sessionData, setSessionData] = useState(initialSessionData)
 
   const handleStepComplete = (data) => {
     setSessionData(prev => ({ ...prev, ...data }))
@@ -35,23 +38,31 @@ export default function Wizard() {
     }
   }
 
+  // Limpiar sesión en el backend (sin esperar respuesta)
+  const cleanupSessionSilently = useCallback((sessionId) => {
+    if (sessionId) {
+      cleanupSession(sessionId).catch(() => {
+        // Ignorar errores de limpieza
+      })
+    }
+  }, [])
+
   const handlePrevious = () => {
     if (currentStep > 1) {
+      // Si volvemos al paso 1, limpiamos toda la sesión
+      if (currentStep === 2) {
+        cleanupSessionSilently(sessionData.sessionId)
+        setSessionData(initialSessionData)
+      }
       setCurrentStep(currentStep - 1)
     }
   }
 
   const handleReset = () => {
+    // Limpiar sesión en el backend
+    cleanupSessionSilently(sessionData.sessionId)
     setCurrentStep(1)
-    setSessionData({
-      sessionId: null,
-      config: null,
-      htmlFiles: [],
-      menuStructure: null,
-      components: null,
-      mapping: null,
-      generatedProject: null,
-    })
+    setSessionData(initialSessionData)
   }
 
   const renderStep = () => {

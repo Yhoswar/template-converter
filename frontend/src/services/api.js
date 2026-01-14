@@ -28,8 +28,12 @@ export const uploadTemplate = async (zipFile, config) => {
 
 /**
  * PASO 2: Analyze Template
+ * @param {string} sessionId - ID de la sesión
+ * @param {File} menuFile - Archivo menu.txt
+ * @param {boolean} useClaudeAPI - Usar Claude API para detección inteligente
+ * @param {AbortSignal} signal - Signal para cancelar la petición
  */
-export const analyzeTemplate = async (sessionId, menuFile, useClaudeAPI = false) => {
+export const analyzeTemplate = async (sessionId, menuFile, useClaudeAPI = false, signal = null) => {
   const formData = new FormData()
   formData.append('menu', menuFile)
   formData.append('useClaudeAPI', useClaudeAPI.toString())
@@ -38,6 +42,8 @@ export const analyzeTemplate = async (sessionId, menuFile, useClaudeAPI = false)
     headers: {
       'Content-Type': 'multipart/form-data',
     },
+    timeout: 120000, // 2 minutos de timeout
+    signal, // Permite cancelar la petición
   })
 
   return response.data
