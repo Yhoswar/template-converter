@@ -15,9 +15,20 @@ export default function FileUploader({
     }
   }, [onDrop])
 
+  // Mapear extensiones a MIME types correctos
+  const getAcceptConfig = (acceptValue) => {
+    if (acceptValue === '.zip') {
+      return { 'application/zip': ['.zip'], 'application/x-zip-compressed': ['.zip'] }
+    }
+    if (acceptValue === '.txt') {
+      return { 'text/plain': ['.txt'] }
+    }
+    return undefined // Acepta cualquier tipo
+  }
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: onDropCallback,
-    accept: accept === '.zip' ? { 'application/zip': ['.zip'] } : accept,
+    accept: getAcceptConfig(accept),
     maxSize: maxSize * 1024 * 1024, // Convert MB to bytes
     multiple: false,
   })

@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { FileText, ArrowRight, ArrowLeft, Loader2, Brain, Zap, RefreshCw } from 'lucide-react'
+import { FileText, ArrowRight, ArrowLeft, Loader2, Brain, Zap, RefreshCw, Upload, ClipboardPaste } from 'lucide-react'
 import { analyzeTemplate } from '../../../services/api'
 import FileUploader from '../../common/FileUploader'
 
 export default function Step2Analyze({ sessionData, onComplete, onPrevious }) {
   const [menuFile, setMenuFile] = useState(null)
+  const [menuText, setMenuText] = useState('')
+  const [inputMode, setInputMode] = useState('file') // 'file' o 'paste'
   const [useClaudeAPI, setUseClaudeAPI] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -30,6 +32,31 @@ export default function Step2Analyze({ sessionData, onComplete, onPrevious }) {
     }
   }
 
+  // Crear un File object a partir del texto pegado
+  const createFileFromText = (text) => {
+    const blob = new Blob([text], { type: 'text/plain' })
+    return new File([blob], 'menu.txt', { type: 'text/plain' })
+  }
+
+  // Obtener el archivo a enviar (ya sea subido o creado del texto)
+  const getMenuFile = () => {
+    if (inputMode === 'file') {
+      return menuFile
+    }
+    if (menuText.trim()) {
+      return createFileFromText(menuText)
+    }
+    return null
+  }
+
+  // Verificar si hay contenido válido
+  const hasValidInput = () => {
+    if (inputMode === 'file') {
+      return menuFile !== null
+    }
+    return menuText.trim().length > 0
+  }
+
   const handleCancel = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
@@ -40,8 +67,12 @@ export default function Step2Analyze({ sessionData, onComplete, onPrevious }) {
   }
 
   const handleAnalyze = async () => {
-    if (!menuFile) {
-      setError('Por favor sube el archivo menu.txt')
+    const fileToSend = getMenuFile()
+
+    if (!fileToSend) {
+      setError(inputMode === 'file'
+        ? 'Por favor sube el archivo menu.txt'
+        : 'Por favor pega el contenido del menú')
       return
     }
 
@@ -59,7 +90,7 @@ export default function Step2Analyze({ sessionData, onComplete, onPrevious }) {
     try {
       const response = await analyzeTemplate(
         sessionData.sessionId,
-        menuFile,
+        fileToSend,
         useClaudeAPI,
         abortControllerRef.current.signal
       )
@@ -111,22 +142,91 @@ export default function Step2Analyze({ sessionData, onComplete, onPrevious }) {
         </div>
       </div>
 
-      {/* File Upload */}
+      {/* Input Mode Tabs */}
+      <div className="mb-4">
+        <div className="flex border-b border-gray-200">
+          <button
+            type="button"
+            onClick={() => setInputMode('file')}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              inputMode === 'file'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Upload className="w-4 h-4" />
+            Subir archivo
+          </button>
+          <button
+            type="button"
+            onClick={() => setInputMode('paste')}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              inputMode === 'paste'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <ClipboardPaste className="w-4 h-4" />
+            Pegar contenido
+          </button>
+        </div>
+      </div>
+
+      {/* File Upload or Paste Content */}
       <div className="mb-8">
-        <label className="label flex items-center gap-2">
-          <FileText className="w-4 h-4" />
-          Archivo menu.txt
-        </label>
-        <FileUploader
-          accept=".txt"
-          maxSize={1}
-          onDrop={handleMenuDrop}
-          file={menuFile}
-          onRemove={() => setMenuFile(null)}
-        />
-        <p className="text-xs text-gray-500 mt-2">
-          Archivo de texto con la estructura del menú (máximo 1MB)
-        </p>
+        {inputMode === 'file' ? (
+          <>
+            <label className="label flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              Archivo menu.txt
+            </label>
+            <FileUploader
+              accept=".txt"
+              maxSize={1}
+              onDrop={handleMenuDrop}
+              file={menuFile}
+              onRemove={() => setMenuFile(null)}
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              Archivo de texto con la estructura del menú (máximo 1MB)
+            </p>
+          </>
+        ) : (
+          <>
+            <label className="label flex items-center gap-2">
+              <ClipboardPaste className="w-4 h-4" />
+              Contenido del menú
+            </label>
+            <textarea
+              value={menuText}
+              onChange={(e) => {
+                setMenuText(e.target.value)
+                setError(null)
+              }}
+              placeholder={`Pega aquí el contenido de tu menu.txt, por ejemplo:
+
+Inicio
+Nosotros
+Servicios
+  Servicio 1
+  Servicio 2
+Contacto
+---
+Home
+About Us
+Services
+  Service 1
+  Service 2
+Contact`}
+              className="w-full h-64 p-4 border-2 border-gray-200 rounded-lg font-mono text-sm
+                focus:border-primary-500 focus:ring-2 focus:ring-primary-200 resize-none"
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              Pega la estructura del menú. Usa indentación (espacios) para submenús.
+              Separa idiomas con "---"
+            </p>
+          </>
+        )}
       </div>
 
       {/* Claude API Option */}
@@ -198,7 +298,7 @@ export default function Step2Analyze({ sessionData, onComplete, onPrevious }) {
 
           <button
             onClick={handleAnalyze}
-            disabled={!menuFile || loading}
+            disabled={!hasValidInput() || loading}
             className="btn-primary flex items-center gap-2"
           >
             {loading ? (
