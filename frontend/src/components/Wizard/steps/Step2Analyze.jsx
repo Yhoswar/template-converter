@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { FileText, ArrowRight, ArrowLeft, Loader2, Brain, Zap } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { FileText, ArrowRight, ArrowLeft, Loader2, Brain, Zap, RefreshCw } from 'lucide-react'
 import { analyzeTemplate } from '../../../services/api'
 import FileUploader from '../../common/FileUploader'
 
@@ -8,6 +8,17 @@ export default function Step2Analyze({ sessionData, onComplete, onPrevious }) {
   const [useClaudeAPI, setUseClaudeAPI] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const abortControllerRef = useRef(null)
+
+  // Cleanup al desmontar el componente o al volver atrás
+  useEffect(() => {
+    return () => {
+      // Cancelar cualquier request pendiente cuando el componente se desmonta
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
+  }, [])
 
   const handleMenuDrop = (files) => {
     const file = files[0]
@@ -19,31 +30,65 @@ export default function Step2Analyze({ sessionData, onComplete, onPrevious }) {
     }
   }
 
+  const handleCancel = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    setLoading(false)
+    setError('Análisis cancelado')
+  }
+
   const handleAnalyze = async () => {
     if (!menuFile) {
       setError('Por favor sube el archivo menu.txt')
       return
     }
 
+    // Cancelar cualquier request anterior
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    // Crear nuevo AbortController
+    abortControllerRef.current = new AbortController()
+
     setLoading(true)
     setError(null)
 
     try {
       const response = await analyzeTemplate(
-        sessionData.sessionId, 
-        menuFile, 
-        useClaudeAPI
+        sessionData.sessionId,
+        menuFile,
+        useClaudeAPI,
+        abortControllerRef.current.signal
       )
-      
+
       onComplete({
         menuStructure: response.data.menuStructure,
         components: response.data.components,
         detectionMethod: response.data.detectionMethod,
       })
     } catch (err) {
-      setError(err.response?.data?.error || 'Error al analizar el template')
+      // No mostrar error si fue cancelado intencionalmente
+      if (err.name === 'AbortError' || err.code === 'ERR_CANCELED') {
+        return
+      }
+
+      // Mensaje de error más descriptivo
+      let errorMessage = 'Error al analizar el template'
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        errorMessage = 'El análisis tardó demasiado tiempo. Por favor intenta de nuevo.'
+      } else if (err.response?.data?.error) {
+        errorMessage = err.response.data.error
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+
+      setError(errorMessage)
     } finally {
       setLoading(false)
+      abortControllerRef.current = null
     }
   }
 
@@ -118,8 +163,15 @@ export default function Step2Analyze({ sessionData, onComplete, onPrevious }) {
 
       {/* Error Message */}
       {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between">
           <p className="text-sm text-red-600">{error}</p>
+          <button
+            onClick={handleAnalyze}
+            className="ml-4 text-sm text-red-700 hover:text-red-900 flex items-center gap-1 font-medium"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Reintentar
+          </button>
         </div>
       )}
 
@@ -127,29 +179,41 @@ export default function Step2Analyze({ sessionData, onComplete, onPrevious }) {
       <div className="flex justify-between">
         <button
           onClick={onPrevious}
+          disabled={loading}
           className="btn-secondary flex items-center gap-2"
         >
           <ArrowLeft className="w-5 h-5" />
           Anterior
         </button>
 
-        <button
-          onClick={handleAnalyze}
-          disabled={!menuFile || loading}
-          className="btn-primary flex items-center gap-2"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              Analizando...
-            </>
-          ) : (
-            <>
-              Analizar
-              <ArrowRight className="w-5 h-5" />
-            </>
+        <div className="flex gap-3">
+          {loading && (
+            <button
+              onClick={handleCancel}
+              className="btn-secondary flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50"
+            >
+              Cancelar
+            </button>
           )}
-        </button>
+
+          <button
+            onClick={handleAnalyze}
+            disabled={!menuFile || loading}
+            className="btn-primary flex items-center gap-2"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Analizando...
+              </>
+            ) : (
+              <>
+                Analizar
+                <ArrowRight className="w-5 h-5" />
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   )
